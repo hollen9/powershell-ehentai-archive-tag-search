@@ -25,6 +25,8 @@ $resultListView.View = [System.Windows.Forms.View]::LargeIcon
 
 $resultListView.Columns.Add('Gallery Name', 400) | Out-Null
 $resultListView.Columns.Add('Cover Image', 350) | Out-Null
+
+
 $resultListView.FullRowSelect = $true
 $resultListView.MultiSelect = $false
 $mainForm.Controls.Add($resultListView)
@@ -41,9 +43,25 @@ $searchBox.Add_KeyDown({
 
 $searchButton.Add_Click({
     $resultListView.Items.Clear()
+    $imageList.Images.Clear()
 
     $searchTag = $searchBox.Text
     $directories = Get-ChildItem 'X:\EroHon' -Directory
+
+    $searchTags = $searchTag -split '(?<=\x22)\s+(?=\S)|\s+(?<=\S)\s+(?=\x22)|\s+(?<=\S)\s+(?=\S)'
+
+    $searchTagRegexes = @()
+    foreach ($tag in $searchTags) {
+        $trimmedTag = $tag.Trim('"')
+        $modifiedTag = ($trimmedTag -replace '^male', 'm') -replace '^female', 'f'
+        if ($modifiedTag -notmatch "^[mf]:") {
+            $searchTagRegexes += "(?:male|female):$modifiedTag"
+        } else {
+            $modifiedTag = $modifiedTag.Replace('m:', 'male:').Replace('f:', 'female:')
+            $searchTagRegexes += "(^|,)($modifiedTag)(:|$)"
+        }
+    }
+
 
     $resultListView.BeginUpdate()
     foreach ($directory in $directories) {
@@ -58,8 +76,32 @@ $searchButton.Add_Click({
     
                 if ($tagsString) {
                     $tags = $tagsString -split ',' | ForEach-Object { $_.Trim() }
-    
-                    if ($tags -contains $searchTag) {
+                        
+                    #$matched = $false #OR
+                    $matched = $true #AND
+                    foreach ($tagRegex in $searchTagRegexes) {
+                        # # OR Search
+                        # if ($tags -match $tagRegex) {
+                        #     $matched = $true
+                        #     break
+                        # }
+
+                        # AND Search
+                        if ($tagRegex.StartsWith('(?:male|female):')) {
+                            $tempRegex = $tagRegex -replace '^\(\?\:male\|female\):', ''
+                            if (-not ($tags -match "male:$tempRegex" -or $tags -match "female:$tempRegex")) {
+                                $matched = $false
+                                break
+                            }
+                        } else {
+                            if (-not ($tags -match $tagRegex)) {
+                                $matched = $false
+                                break
+                            }
+                        }
+                    }
+                    if ($matched) {
+
                         $directoryInfo = New-Object System.IO.DirectoryInfo($directory.FullName)
                         
                         $coverImageFiles = $directoryInfo.GetFiles() | Where-Object { $_.Extension -in @('.jpg', '.jpeg', '.png', '.bmp') } | Sort-Object -Property Name | Select-Object -First 1
@@ -72,7 +114,7 @@ $searchButton.Add_Click({
 
                         if ($coverImagePath -ne $null) {
                             $imageList.Images.Add([System.Drawing.Image]::FromFile($coverImagePath), [System.Drawing.Color]::Transparent)
-                            # Write-Host "Added image: $coverImagePath"
+                            Write-Host "Added image: $coverImagePath"
                         }
                         $item = New-Object System.Windows.Forms.ListViewItem($directory.Name)
                         $item.ImageIndex = $imageList.Images.Count - 1
@@ -84,7 +126,7 @@ $searchButton.Add_Click({
         }
     }
     $resultListView.EndUpdate()
-    # Write-Host "Total images: $($imageList.Images.Count)"
+    Write-Host "Total images: $($imageList.Images.Count)"
 })
 
 $resultListView.Add_MouseDoubleClick({
